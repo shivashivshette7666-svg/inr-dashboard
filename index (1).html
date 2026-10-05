@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>INR, Markets and RBI Rates: Daily Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#14213d;--mute:#5d6b82;--line:#d9dfe7;--up:#0f766e;--down:#b42318;--c1:#14213d;--c2:#c2410c;--c3:#0f766e;--c4:#7c3aed;--c5:#b8860b;--c6:#2563eb}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1420;--card:#152033;--ink:#e8edf5;--mute:#93a1b8;--line:#26354d;--up:#34d399;--down:#f87171;--c1:#e8edf5;--c2:#fb923c;--c3:#34d399;--c4:#a78bfa;--c5:#e0b84c;--c6:#60a5fa}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+header{padding:28px 20px 8px;max-width:1100px;margin:0 auto}
+h1{font:600 28px/1.2 Fraunces,Georgia,serif;margin:0 0 4px}
+.sub{color:var(--mute);margin:0}
+main{max-width:1100px;margin:0 auto;padding:12px 20px 40px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:14px 0 22px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.kpi .n{color:var(--mute);font-size:13px}
+.kpi .v{font:600 22px/1.3 Fraunces,Georgia,serif}
+.kpi .d{font-size:13px;font-weight:500}
+.up{color:var(--up)}.down{color:var(--down)}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+section h2{font:600 18px Fraunces,Georgia,serif;margin:0 0 2px}
+section p{margin:0 0 10px;color:var(--mute);font-size:13px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.tabs button{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--ink);padding:4px 12px;border-radius:999px;cursor:pointer}
+.tabs button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tabs button:focus-visible{outline:2px solid var(--c6);outline-offset:2px}
+.box{position:relative;height:300px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}.box{height:260px}}
+#err{display:none;background:#fde8e6;color:#7a1810;padding:12px;border-radius:8px;margin:12px 0}
+footer{max-width:1100px;margin:0 auto;padding:0 20px 30px;color:var(--mute);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>INR, Markets and RBI Rates</h1>
+  <p class="sub" id="upd">Loading data...</p>
+</header>
+<main>
+  <div id="err">data.json load nahi hua. Page ko GitHub Pages ya kisi web server se kholo (file ko seedha double-click karne se kaam nahi karta).</div>
+  <div class="kpis" id="kpis"></div>
+
+  <section>
+    <h2>Rupee against other currencies</h2>
+    <p>How many rupees one unit of each currency costs.</p>
+    <div class="tabs" id="fxTabs"></div>
+    <div class="box"><canvas id="fx"></canvas></div>
+  </section>
+
+  <div class="grid2">
+    <section><h2>Gold, 24K</h2><p>Rupees per 10 g.</p><div class="box"><canvas id="gold"></canvas></div></section>
+    <section><h2>Silver</h2><p>Rupees per 10 g.</p><div class="box"><canvas id="silver"></canvas></div></section>
+  </div>
+
+  <section>
+    <h2>Stock indices</h2>
+    <div class="tabs" id="ixTabs"></div>
+    <div class="box"><canvas id="ix"></canvas></div>
+  </section>
+
+  <div class="grid2">
+    <section><h2>Inflation</h2><p>Wholesale and retail, per year.</p><div class="box"><canvas id="inf"></canvas></div></section>
+    <section><h2>GDP growth</h2><p>Estimated, nominal and real.</p><div class="box"><canvas id="gdp"></canvas></div></section>
+  </div>
+
+  <section>
+    <h2>RBI policy rates</h2>
+    <p>These change only when RBI announces a new policy.</p>
+    <div class="box"><canvas id="rates"></canvas></div>
+  </section>
+</main>
+<footer>Data updates every weekday after 5 PM IST. Gold and silver are converted from international prices and exclude import duty and GST, so they can differ from local shop rates.</footer>
+
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const pct = v => v == null ? "-" : (v * 100).toFixed(2) + "%";
+const num = v => v == null ? "-" : v.toLocaleString("en-IN", {maximumFractionDigits: 2});
+const charts = {};
+
+function draw(id, labels, defs, fmt) {
+  charts[id]?.destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type: "line",
+    data: { labels, datasets: defs.map((d, i) => ({
+      label: d.label, data: d.data, borderColor: css("--c" + (d.c || i + 1)),
+      backgroundColor: css("--c" + (d.c || i + 1)), borderWidth: 2, pointRadius: 0,
+      pointHoverRadius: 4, tension: .2, spanGaps: true, stepped: d.stepped || false })) },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: defs.length > 1, labels: { color: css("--ink") } },
+        tooltip: { callbacks: { label: c => c.dataset.label + ": " + fmt(c.parsed.y) } } },
+      scales: { x: { ticks: { color: css("--mute"), maxTicksLimit: 8 }, grid: { display: false } },
+        y: { ticks: { color: css("--mute"), callback: v => fmt(v) }, grid: { color: css("--line") } } } }
+  });
+}
+
+function tabs(el, items, onPick) {
+  el.innerHTML = "";
+  items.forEach((it, i) => {
+    const b = document.createElement("button");
+    b.textContent = it.name; b.setAttribute("aria-pressed", i === 0);
+    b.onclick = () => { [...el.children].forEach(x => x.setAttribute("aria-pressed", false)); b.setAttribute("aria-pressed", true); onPick(it); };
+    el.appendChild(b);
+  });
+  onPick(items[0]);
+}
+
+fetch("data.json?v=" + Date.now()).then(r => r.json()).then(({dates, series: S}) => {
+  const labels = dates.map(d => new Date(d).toLocaleDateString("en-IN", {day: "numeric", month: "short"}));
+  const last = k => S[k][S[k].length - 1], prev = k => S[k][S[k].length - 2];
+  const dateTxt = new Date(dates.at(-1)).toLocaleDateString("en-IN", {day: "numeric", month: "long", year: "numeric"});
+  document.getElementById("upd").textContent = "Latest data: " + dateTxt;
+
+  const kp = [["usd", "1 USD in rupees", 2], ["gold_24k", "Gold 24K, 10 g", 0], ["silver_10g", "Silver, 10 g", 0], ["bse", "BSE Sensex", 2], ["nse", "NSE Nifty", 2]];
+  document.getElementById("kpis").innerHTML = kp.map(([k, n, dp]) => {
+    const ch = last(k) - prev(k), p = ch / prev(k) * 100, cls = ch >= 0 ? "up" : "down";
+    return `<div class="kpi"><div class="n">${n}</div><div class="v">${last(k).toLocaleString("en-IN", {maximumFractionDigits: dp})}</div><div class="d ${cls}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)} (${p.toFixed(2)}%)</div></div>`;
+  }).join("");
+
+  const fxItems = [["usd", "USD"], ["gbp", "GBP"], ["eur", "EUR"], ["aed", "AED"], ["jpy", "100 JPY"], ["idr", "10,000 IDR"]].map(([k, n]) => ({k, name: n}));
+  tabs(document.getElementById("fxTabs"), fxItems, it => draw("fx", labels, [{label: it.name + " in INR", data: S[it.k], c: 2}], v => "₹" + num(v)));
+
+  draw("gold", labels, [{label: "Gold 24K", data: S.gold_24k, c: 5}], v => "₹" + num(v));
+  draw("silver", labels, [{label: "Silver", data: S.silver_10g, c: 1}], v => "₹" + num(v));
+
+  tabs(document.getElementById("ixTabs"), [{k: "bse", name: "BSE Sensex"}, {k: "nse", name: "NSE Nifty"}],
+    it => draw("ix", labels, [{label: it.name, data: S[it.k], c: 3}], num));
+
+  draw("inf", labels, [{label: "Wholesale", data: S.wholesale_inflation, c: 2}, {label: "Retail", data: S.retail_inflation, c: 6}], pct);
+  draw("gdp", labels, [{label: "Estimated", data: S.gdp_estimated, c: 1}, {label: "Nominal", data: S.gdp_nominal, c: 5}, {label: "Real", data: S.gdp_real, c: 3}], pct);
+  draw("rates", labels, [["repo", "Repo"], ["reverse_repo", "Reverse repo"], ["sdf", "Standing deposit"], ["msf", "Marginal standing"], ["bank_rate", "Bank rate"], ["crr", "CRR"], ["slr", "SLR"]]
+    .map(([k, n], i) => ({label: n, data: S[k], c: i % 6 + 1, stepped: true})), pct);
+}).catch(() => { document.getElementById("err").style.display = "block"; document.getElementById("upd").textContent = ""; });
+</script>
+</body>
+</html>

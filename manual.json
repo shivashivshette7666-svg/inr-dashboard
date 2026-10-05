@@ -1,0 +1,16 @@
+{
+  "gold_icomdex": 35613.48,
+  "silver_icomdex": 24805.94,
+  "wholesale_inflation": 0.0992,
+  "retail_inflation": 0.0482,
+  "gdp_estimated": 0.089,
+  "gdp_nominal": 0.103,
+  "gdp_real": 0.078,
+  "repo": 0.0525,
+  "reverse_repo": 0.0335,
+  "sdf": 0.05,
+  "msf": 0.055,
+  "bank_rate": 0.055,
+  "crr": 0.03,
+  "slr": 0.18
+}
